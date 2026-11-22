@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WeDo 기차 컨트롤러</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+KR:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen throttle panel - status strip, big speed readout, slider, three big buttons */
+:root {
+  --bg: #eef1ee;
+  --panel: #ffffff;
+  --fg: #1c2420;
+  --muted: #5d6b64;
+  --line: #d3dbd6;
+  --accent: #c8102e;      /* signal red */
+  --go: #1f7a4d;
+  --back: #2b5ea8;
+  --font-display: "Space Grotesk", "Noto Sans KR", system-ui, sans-serif;
+  --font-body: "Noto Sans KR", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121714; --panel: #1c231f; --fg: #e8eee9; --muted: #95a39b; --line: #2e3933;
+    --accent: #ff4d5e; --go: #3fb57a; --back: #6b9cf0; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  -webkit-tap-highlight-color: transparent; user-select: none;
+}
+main { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; min-height: 100%; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-size: 1.15rem; margin: 0; letter-spacing: .01em; }
+.status { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.dot.on { background: var(--go); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+button { font: inherit; border: none; border-radius: 12px; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--back); outline-offset: 2px; }
+button:disabled { opacity: .4; cursor: default; }
+#connect { background: var(--fg); color: var(--bg); padding: 14px; font-weight: 600; font-size: 1rem; }
+.label { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ports { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ports button { padding: 12px 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line); font-weight: 600; }
+.ports button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.readout { text-align: center; }
+#speed { font-family: var(--font-display); font-size: 5rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+#dir { font-size: .95rem; color: var(--muted); margin-top: 4px; }
+input[type=range] { width: 100%; height: 44px; accent-color: var(--accent); }
+.scale { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.drive { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 10px; }
+.drive button { padding: 22px 0; font-size: 1.05rem; font-weight: 600; color: #fff; }
+#back { background: var(--back); }
+#fwd { background: var(--go); }
+#stop { background: var(--accent); font-size: 1.25rem; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: .9rem; }
+#msg { font-size: .85rem; color: var(--muted); min-height: 1.2em; }
+.tip { font-size: .8rem; color: var(--muted); line-height: 1.55; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>WeDo 기차 컨트롤러</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="state">연결 안 됨</span></div>
+  </header>
+
+  <button id="connect">WeDo 허브 연결</button>
+  <div id="msg">허브의 초록 버튼을 누른 뒤 연결하세요.</div>
+
+  <section class="panel">
+    <div class="label">모터 포트</div>
+    <div class="ports" role="group" aria-label="모터 포트">
+      <button id="pA" data-port="A" aria-pressed="true">A</button>
+      <button id="pB" data-port="B" aria-pressed="false">B</button>
+      <button id="pAB" data-port="AB" aria-pressed="false">A+B</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="readout">
+      <div id="speed">0</div>
+      <div id="dir">정지</div>
+    </div>
+    <input id="slider" type="range" min="-100" max="100" step="5" value="0" aria-label="속도">
+    <div class="scale"><span>후진 100</span><span>0</span><span>전진 100</span></div>
+    <div class="drive">
+      <button id="back">◀ 후진쪽</button>
+      <button id="stop">정지</button>
+      <button id="fwd">전진쪽 ▶</button>
+    </div>
+    <div class="row">
+      <label for="flip">방향 반대로</label>
+      <input id="flip" type="checkbox">
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row"><span>허브 배터리</span><strong id="batt">-</strong></div>
+    <p class="tip">WeDo 허브는 전압이 낮아서 30 이하에서는 기차가 안 움직일 수 있습니다. 처음엔 50 정도로 출발해 보세요.</p>
+  </section>
+</main>
+
+<script>
+const SVC_HUB = '00001523-1212-efde-1523-785feabcd123';
+const SVC_IO  = '00004f0e-1212-efde-1523-785feabcd123';
+const CH_MOTOR = '00001565-1212-efde-1523-785feabcd123';
+const PORTS = { A: [1], B: [2], AB: [1, 2] };
+
+const $ = id => document.getElementById(id);
+let device = null, motorCh = null;
+let portKey = 'A', speed = 0;
+let busy = false, dirty = false, lastSentPorts = [];
+
+function setMsg(t) { $('msg').textContent = t; }
+function setConnected(on) {
+  $('dot').classList.toggle('on', on);
+  $('state').textContent = on ? '연결됨' : '연결 안 됨';
+  $('connect').textContent = on ? '연결 끊기' : 'WeDo 허브 연결';
+}
+
+function render() {
+  $('speed').textContent = Math.abs(speed);
+  $('dir').textContent = speed > 0 ? '전진' : speed < 0 ? '후진' : '정지';
+  $('slider').value = speed;
+}
+
+function toByte(v) { return v < 0 ? 256 + v : v; }
+
+async function writePort(port, power) {
+  await motorCh.writeValue(new Uint8Array([port, 0x01, 0x02, toByte(power)]));
+}
+
+// Send latest speed; coalesce rapid changes so GATT writes never overlap.
+async function flush() {
+  if (!motorCh) return;
+  if (busy) { dirty = true; return; }
+  busy = true;
+  try {
+    do {
+      dirty = false;
+      const ports = PORTS[portKey];
+      const power = $('flip').checked ? -speed : speed;
+      for (const p of lastSentPorts) if (!ports.includes(p)) await writePort(p, 0);
+      for (const p of ports) await writePort(p, power);
+      lastSentPorts = ports;
+    } while (dirty);
+  } catch (e) {
+    setMsg('명령 전송 실패: ' + e.message);
+  } finally { busy = false; }
+}
+
+function setSpeed(v) {
+  speed = Math.max(-100, Math.min(100, Math.round(v / 5) * 5));
+  render(); flush();
+}
+
+async function connect() {
+  if (!window.isSecureContext) {
+    setMsg('크롬이 이 주소를 보안 주소로 인정하지 않아 블루투스가 꺼져 있습니다. chrome://flags 에서 "Insecure origins treated as secure"에 ' + location.origin + ' 을 넣고 Enabled 후 Relaunch 하세요.');
+    return;
+  }
+  if (!navigator.bluetooth) {
+    setMsg('이 브라우저는 블루투스를 지원하지 않습니다. 안드로이드 크롬으로 열어주세요.');
+    return;
+  }
+  try {
+    setMsg('허브 찾는 중…');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SVC_HUB] }, { namePrefix: 'LPF2' }],
+      optionalServices: [SVC_HUB, SVC_IO, 'battery_service']
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnect);
+    setMsg('연결 중…');
+    const server = await device.gatt.connect();
+    const io = await server.getPrimaryService(SVC_IO);
+    motorCh = await io.getCharacteristic(CH_MOTOR);
+    setConnected(true);
+    setMsg((device.name || '허브') + '에 연결했습니다.');
+    lastSentPorts = [];
+    setSpeed(0);
+    try {
+      const bs = await server.getPrimaryService('battery_service');
+      const bc = await bs.getCharacteristic('battery_level');
+      const showBatt = dv => { $('batt').textContent = dv.getUint8(0) + '%'; };
+      showBatt(await bc.readValue());
+      bc.addEventListener('characteristicvaluechanged', e => showBatt(e.target.value));
+      await bc.startNotifications();
+    } catch (e) { /* battery is optional */ }
+  } catch (e) {
+    motorCh = null; setConnected(false);
+    setMsg(e.name === 'NotFoundError' ? '선택을 취소했습니다.' : '연결 실패: ' + e.message);
+  }
+}
+
+function onDisconnect() {
+  motorCh = null; speed = 0; render(); setConnected(false);
+  $('batt').textContent = '-';
+  setMsg('허브 연결이 끊겼습니다.');
+}
+
+$('connect').addEventListener('click', async () => {
+  if (device && device.gatt.connected) {
+    speed = 0; await flush();
+    device.gatt.disconnect();
+  } else connect();
+});
+$('slider').addEventListener('input', e => setSpeed(+e.target.value));
+$('fwd').addEventListener('click', () => setSpeed(speed + 10));
+$('back').addEventListener('click', () => setSpeed(speed - 10));
+$('stop').addEventListener('click', () => setSpeed(0));
+$('flip').addEventListener('change', () => flush());
+document.querySelectorAll('.ports button').forEach(b => b.addEventListener('click', () => {
+  portKey = b.dataset.port;
+  document.querySelectorAll('.ports button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+  flush();
+}));
+render();
+</script>
+</body>
+</html>
