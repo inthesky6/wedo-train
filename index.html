@@ -702,6 +702,14 @@ class Ev3Hub extends Hub {
     this.rx = new Uint8Array(0);
     this.subs = new Map();     // port -> mode we poll
     this.pos = new Map();      // motor port -> last tacho count
+    this.stats = { tx: 0, rx: 0, err: 0, bytes: 0, types: '' };
+    this.diagEl = el('div', { class: 'dstatus' });
+    this.section.insertBefore(this.diagEl, this.devsEl);
+  }
+  showDiag() {
+    const s = this.stats;
+    this.diagEl.textContent = `통신 상태: 보냄 ${s.tx} · 응답 ${s.rx} · 오류 응답 ${s.err} · 받은 바이트 ${s.bytes}` +
+      (s.types ? ` · 포트 번호 ${s.types}` : '');
   }
   get label() { return 'EV3 브릭'; }
   get canShutdown() { return false; }
@@ -740,6 +748,7 @@ class Ev3Hub extends Hub {
     }
   }
   onBytes(chunk) {
+    this.stats.bytes += chunk.length;
     const merged = new Uint8Array(this.rx.length + chunk.length);
     merged.set(this.rx); merged.set(chunk, this.rx.length);
     this.rx = merged;
@@ -748,9 +757,11 @@ class Ev3Hub extends Hub {
       if (this.rx.length < len + 2) break;
       const frame = this.rx.slice(0, len + 2);
       this.rx = this.rx.slice(len + 2);
+      if (frame[4] === 0x02) this.stats.rx++; else this.stats.err++;
       const p = this.pending.get(u16(frame, 2));
       if (p) { this.pending.delete(u16(frame, 2)); p(frame[4] === 0x02 ? frame.slice(5) : null); }
     }
+    this.showDiag();
   }
   frame(ops, globalSize, reply) {
     const cnt = this.counter = (this.counter + 1) & 0xFFFF;
@@ -760,6 +771,8 @@ class Ev3Hub extends Hub {
   command(ops) { const f = this.frame(ops, 0, false); return this.enqueue(() => this.writer.write(f.bytes)); }
   request(ops, globalSize) {
     const f = this.frame(ops, globalSize, true);
+    this.stats.tx++;
+    this.showDiag();
     return new Promise(res => {
       this.pending.set(f.cnt, res);
       setTimeout(() => { if (this.pending.delete(f.cnt)) res(null); }, 1500);
@@ -776,15 +789,19 @@ class Ev3Hub extends Hub {
   async detect() {
     const ops = [];
     EV3_PORTS.forEach((p, i) => ops.push(0x99, 0x05, 0x00, lc0(p), ...gv(i * 2), ...gv(i * 2 + 1)));
-    ops.push(0x81, 0x12, ...gv(16));                         // opUI_READ GET_LBATT
-    const data = await this.request(ops, 17);
-    if (!data || !this.connected) return;
-    EV3_PORTS.forEach((p, i) => {
-      const t = data[i * 2];
-      if (t === 0 || t >= 100) { if (this.devices.get(p)?.present) this.detach(p); }
-      else this.attach(p, 1000 + t);
-    });
-    this.setBattery(data[16]);
+    const data = await this.request(ops, 16);
+    if (data && this.connected) {
+      this.stats.types = EV3_PORTS.map((p, i) => `${this.portLabel(p)}=${data[i * 2]}`).join(' ');
+      this.showDiag();
+      EV3_PORTS.forEach((p, i) => {
+        const t = data[i * 2];
+        if (t === 0 || t >= 100) { if (this.devices.get(p)?.present) this.detach(p); }
+        else this.attach(p, 1000 + t);
+      });
+    }
+    // Battery separately, so a firmware that rejects it cannot break port detection.
+    const b = await this.request([0x81, 0x12, ...gv(0)], 1);   // opUI_READ GET_LBATT
+    if (b && b.length) this.setBattery(b[0]);
   }
   // Read every sensor/motor that a card is listening to, in one round trip.
   async poll() {
