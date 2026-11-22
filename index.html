@@ -979,7 +979,8 @@ async function connectEv3(setup) {
   let sp;
   try {
     setMsg('EV3를 고르세요. 목록에 없으면 폰 블루투스 설정에서 EV3를 먼저 페어링하세요.');
-    sp = await navigator.serial.requestPort({ filters: [{ bluetoothServiceClassId: SPP_UUID }], allowedBluetoothServiceClassIds: [SPP_UUID] });
+    // No filter: some phones list the EV3 only when every paired serial device is shown.
+    sp = await navigator.serial.requestPort({ allowedBluetoothServiceClassIds: [SPP_UUID] });
   } catch (e) {
     setMsg(e.name === 'NotFoundError' ? '선택을 취소했습니다.' : 'EV3 검색 실패: ' + e.message, e.name !== 'NotFoundError');
     return;
