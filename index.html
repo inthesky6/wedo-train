@@ -809,6 +809,11 @@ class Ev3Hub extends Hub {
     });
     this.stats.types = parts.join(' ') + (out ? '' : ' (출력 조회 거부됨)');
     this.showDiag();
+    // 127 = TYPE_ERROR: something the port cannot use, almost always a motor in a sensor port.
+    const wrong = data ? [0, 1, 2, 3].filter(i => data[i * 2] === 127).map(i => i + 1) : [];
+    this.stateEl.textContent = wrong.length
+      ? `${wrong.join(', ')}번 포트에 맞지 않는 장치가 꽂혀 있습니다. 모터는 위쪽 A~D 포트에 꽂아주세요 (1~4번은 센서 전용).`
+      : '';
     // Battery separately, so a firmware that rejects it cannot break port detection.
     const b = await this.request([0x81, 0x12, ...gv(0)], 1);   // opUI_READ GET_LBATT
     if (b && b.length) this.setBattery(b[0]);
