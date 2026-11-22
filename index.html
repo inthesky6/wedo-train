@@ -790,24 +790,14 @@ class Ev3Hub extends Hub {
     const ops = [];
     EV3_PORTS.forEach((p, i) => ops.push(0x99, 0x05, 0x00, lc0(p), ...gv(i * 2), ...gv(i * 2 + 1)));
     const data = await this.request(ops, 16);
-    // Second opinion for motor ports: ask the output side directly (opOUTPUT_GET_TYPE).
-    // Sent on its own so a firmware that rejects it cannot break sensor detection.
-    const outOps = [];
-    for (let n = 0; n < 4; n++) outOps.push(0xA0, 0x00, lc0(n), ...gv(n));
-    const out = await this.request(outOps, 4);
-    if (!this.connected) return;
+    if (!this.connected || !data) return;
     const valid = t => t > 0 && t < 100;
-    const parts = [];
     EV3_PORTS.forEach((p, i) => {
-      const a = data ? data[i * 2] : undefined;
-      const b = (p >= 16 && out) ? out[p - 16] : undefined;
-      parts.push(`${this.portLabel(p)}=${a ?? '?'}${b !== undefined ? '/' + b : ''}`);
-      const t = valid(a) ? a : valid(b) ? b : null;
-      if (a === undefined && b === undefined) return;          // no answer at all: leave as is
-      if (t === null) { if (this.devices.get(p)?.present) this.detach(p); }
-      else this.attach(p, 1000 + t);
+      const t = data[i * 2];
+      if (valid(t)) this.attach(p, 1000 + t);
+      else if (this.devices.get(p)?.present) this.detach(p);
     });
-    this.stats.types = parts.join(' ') + (out ? '' : ' (출력 조회 거부됨)');
+    this.stats.types = EV3_PORTS.map((p, i) => `${this.portLabel(p)}=${data[i * 2]}`).join(' ');
     this.showDiag();
     // 127 = TYPE_ERROR: something the port cannot use, almost always a motor in a sensor port.
     const wrong = data ? [0, 1, 2, 3].filter(i => data[i * 2] === 127).map(i => i + 1) : [];
