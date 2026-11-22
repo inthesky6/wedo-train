@@ -3,228 +3,671 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WeDo 기차 컨트롤러</title>
+<meta name="theme-color" content="#1c2420">
+<title>브릭 허브 컨트롤</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+KR:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+KR:wght@400;600;700&display=swap">
 <style>
-/* Layout: one-screen throttle panel - status strip, big speed readout, slider, three big buttons */
+/* Layout: sticky top bar (add hub) -> one section per hub -> device cards by port -> sticky "stop all" bar */
 :root {
   --bg: #eef1ee;
   --panel: #ffffff;
+  --sunk: #f4f6f4;
   --fg: #1c2420;
   --muted: #5d6b64;
   --line: #d3dbd6;
-  --accent: #c8102e;      /* signal red */
+  --accent: #c8102e;
   --go: #1f7a4d;
   --back: #2b5ea8;
+  --warn: #b26a00;
   --font-display: "Space Grotesk", "Noto Sans KR", system-ui, sans-serif;
   --font-body: "Noto Sans KR", system-ui, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #121714; --panel: #1c231f; --fg: #e8eee9; --muted: #95a39b; --line: #2e3933;
-    --accent: #ff4d5e; --go: #3fb57a; --back: #6b9cf0; color-scheme: dark;
+    --bg: #121714; --panel: #1c231f; --sunk: #161c19; --fg: #e8eee9; --muted: #95a39b; --line: #2e3933;
+    --accent: #ff4d5e; --go: #3fb57a; --back: #6b9cf0; --warn: #f0a83a; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { min-height: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap {
+  max-width: 560px; margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-top: max(12px, env(safe-area-inset-top, 0px));
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  -webkit-tap-highlight-color: transparent; user-select: none;
 }
-main { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; min-height: 100%; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-h1 { font-family: var(--font-display); font-size: 1.15rem; margin: 0; letter-spacing: .01em; }
-.status { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
-.dot.on { background: var(--go); }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-button { font: inherit; border: none; border-radius: 12px; cursor: pointer; touch-action: manipulation; }
-button:focus-visible, input:focus-visible { outline: 3px solid var(--back); outline-offset: 2px; }
+.top {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  padding-top: max(10px, env(safe-area-inset-top, 0px)); padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-size: 1.15rem; margin: 0; }
+h2 { font-family: var(--font-display); font-size: 1.05rem; margin: 0; }
+main.wrap { display: flex; flex-direction: column; gap: 16px; padding-block: 16px 110px; }
+button { font: inherit; border: none; border-radius: 10px; cursor: pointer; touch-action: manipulation; color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--back); outline-offset: 2px; }
 button:disabled { opacity: .4; cursor: default; }
-#connect { background: var(--fg); color: var(--bg); padding: 14px; font-weight: 600; font-size: 1rem; }
-.label { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.ports { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.ports button { padding: 12px 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line); font-weight: 600; }
-.ports button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-.readout { text-align: center; }
-#speed { font-family: var(--font-display); font-size: 5rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-#dir { font-size: .95rem; color: var(--muted); margin-top: 4px; }
-input[type=range] { width: 100%; height: 44px; accent-color: var(--accent); }
-.scale { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.drive { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 10px; }
-.drive button { padding: 22px 0; font-size: 1.05rem; font-weight: 600; color: #fff; }
-#back { background: var(--back); }
-#fwd { background: var(--go); }
-#stop { background: var(--accent); font-size: 1.25rem; }
-.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: .9rem; }
+.primary { background: var(--fg); color: var(--bg); padding: 10px 16px; font-weight: 600; }
+.ghost { background: var(--sunk); border: 1px solid var(--line); padding: 8px 12px; font-size: .85rem; }
 #msg { font-size: .85rem; color: var(--muted); min-height: 1.2em; }
-.tip { font-size: .8rem; color: var(--muted); line-height: 1.55; margin: 0; }
+#msg.err { color: var(--accent); }
+
+.empty { background: var(--panel); border: 1px dashed var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.empty p { margin: 0; color: var(--muted); line-height: 1.6; }
+.empty ul { margin: 0; padding-left: 1.2em; color: var(--muted); line-height: 1.7; font-size: .9rem; }
+
+.hub { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.hub.off { opacity: .6; }
+.hub-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.hub-h > div { min-width: 0; }
+.badge { display: inline-block; font-size: .72rem; letter-spacing: .06em; color: var(--muted); margin-top: 2px; }
+.batt { font-size: .85rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.batt.low { color: var(--accent); font-weight: 600; }
+.hub-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hub-state { font-size: .85rem; color: var(--warn); }
+.devs { display: flex; flex-direction: column; gap: 10px; }
+.devs:empty::before { content: "포트에 꽂힌 장치를 찾는 중…"; color: var(--muted); font-size: .85rem; }
+
+.card { background: var(--sunk); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.card-h { display: flex; align-items: center; gap: 10px; }
+.port { font-family: var(--font-display); font-weight: 700; min-width: 2.2em; height: 2.2em; padding: 0 .4em; border-radius: 8px; background: var(--fg); color: var(--bg); display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; }
+.port.int { background: var(--line); color: var(--fg); font-size: .7rem; }
+.dname { font-weight: 600; min-width: 0; }
+
+.readout { display: flex; align-items: baseline; justify-content: center; gap: 10px; }
+.readout output { font-family: var(--font-display); font-size: 3rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.readout span { color: var(--muted); font-size: .9rem; }
+input[type=range] { width: 100%; height: 40px; accent-color: var(--accent); margin: 0; }
+.drive { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 8px; }
+.drive button { padding: 16px 0; font-weight: 600; color: #fff; }
+.drive .b { background: var(--back); }
+.drive .f { background: var(--go); }
+.drive .s { background: var(--accent); }
+.opts { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: .85rem; color: var(--muted); flex-wrap: wrap; }
+.opts label { display: inline-flex; align-items: center; gap: 6px; }
+.tacho { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tacho .pos { font-size: .9rem; color: var(--muted); }
+.tacho .pos b { color: var(--fg); font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.btnrow button { background: var(--panel); border: 1px solid var(--line); padding: 8px 10px; font-size: .85rem; font-variant-numeric: tabular-nums; }
+
+.modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.modes button { background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; font-size: .82rem; }
+.modes button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.value { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.value .v { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.value .u { color: var(--muted); font-size: .85rem; }
+.swatch { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+
+.colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.colors button { aspect-ratio: 1; max-width: 100%; border: 2px solid var(--line); border-radius: 50%; }
+.colors button[aria-pressed="true"] { border-color: var(--fg); box-shadow: 0 0 0 2px var(--panel) inset; }
+
+details.card summary { cursor: pointer; list-style: none; }
+details.card summary::-webkit-details-marker { display: none; }
+details.card summary .card-h::after { content: "보기"; margin-left: auto; font-size: .8rem; color: var(--muted); }
+details.card[open] summary .card-h::after { content: "닫기"; }
+
+.bottom {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--bg); border-top: 1px solid var(--line);
+  padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+}
+#stopAll { width: 100%; background: var(--accent); color: #fff; padding: 16px; font-size: 1.05rem; font-weight: 700; }
+@media (prefers-reduced-motion: no-preference) { button { transition: transform .08s; } button:active { transform: scale(.97); } }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>WeDo 기차 컨트롤러</h1>
-    <div class="status"><span class="dot" id="dot"></span><span id="state">연결 안 됨</span></div>
-  </header>
+<header class="top">
+  <div class="wrap">
+    <h1>브릭 허브 컨트롤</h1>
+    <button class="primary" id="addHub">+ 허브 연결</button>
+  </div>
+</header>
 
-  <button id="connect">WeDo 허브 연결</button>
-  <div id="msg">허브의 초록 버튼을 누른 뒤 연결하세요.</div>
-
-  <section class="panel">
-    <div class="label">모터 포트</div>
-    <div class="ports" role="group" aria-label="모터 포트">
-      <button id="pA" data-port="A" aria-pressed="true">A</button>
-      <button id="pB" data-port="B" aria-pressed="false">B</button>
-      <button id="pAB" data-port="AB" aria-pressed="false">A+B</button>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="readout">
-      <div id="speed">0</div>
-      <div id="dir">정지</div>
-    </div>
-    <input id="slider" type="range" min="-100" max="100" step="5" value="0" aria-label="속도">
-    <div class="scale"><span>후진 100</span><span>0</span><span>전진 100</span></div>
-    <div class="drive">
-      <button id="back">◀ 후진쪽</button>
-      <button id="stop">정지</button>
-      <button id="fwd">전진쪽 ▶</button>
-    </div>
-    <div class="row">
-      <label for="flip">방향 반대로</label>
-      <input id="flip" type="checkbox">
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="row"><span>허브 배터리</span><strong id="batt">-</strong></div>
-    <p class="tip">WeDo 허브는 전압이 낮아서 30 이하에서는 기차가 안 움직일 수 있습니다. 처음엔 50 정도로 출발해 보세요.</p>
-  </section>
+<main class="wrap" id="main">
+  <div id="msg">허브의 버튼을 눌러 불빛이 깜빡일 때 "허브 연결"을 누르세요.</div>
+  <div class="empty" id="empty">
+    <h2>연결된 허브가 없습니다</h2>
+    <p>허브를 여러 개 동시에 연결할 수 있습니다. 포트에 꽂은 모터와 센서는 자동으로 나타납니다.</p>
+    <ul>
+      <li>WeDo 2.0 스마트허브 (45300)</li>
+      <li>Boost 무브 허브 (88006, 17101 세트)</li>
+      <li>Technic 허브 (88012), Powered Up 허브 (88009)</li>
+    </ul>
+    <p>블루투스와 위치(GPS)가 켜져 있어야 합니다.</p>
+  </div>
+  <div id="hubs" style="display:flex;flex-direction:column;gap:16px"></div>
 </main>
 
+<div class="bottom" id="bottom" hidden>
+  <div class="wrap"><button id="stopAll">모든 모터 정지</button></div>
+</div>
+
 <script>
-const SVC_HUB = '00001523-1212-efde-1523-785feabcd123';
-const SVC_IO  = '00004f0e-1212-efde-1523-785feabcd123';
-const CH_MOTOR = '00001565-1212-efde-1523-785feabcd123';
-const PORTS = { A: [1], B: [2], AB: [1, 2] };
+'use strict';
+// ---------- BLE identifiers ----------
+const LWP_SVC = '00001623-1212-efde-1623-785feabcd123';
+const LWP_CHR = '00001624-1212-efde-1623-785feabcd123';
+const wd = h => '0000' + h + '-1212-efde-1523-785feabcd123';
+const WD_HUB = wd('1523'), WD_IO = wd('4f0e');
+const WD = { button: wd('1526'), portType: wd('1527'), disconnect: wd('152b'),
+             sensor: wd('1560'), portWrite: wd('1563'), motor: wd('1565') };
 
+// ---------- byte helpers ----------
+const u8 = (b, o) => b[o];
+const i8 = (b, o) => (b[o] << 24) >> 24;
+const u16 = (b, o) => b[o] | (b[o + 1] << 8);
+const i16 = (b, o) => (u16(b, o) << 16) >> 16;
+const i32 = (b, o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
+const le32 = v => [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255];
+const sbyte = v => v & 255;
+const need = (b, n) => b.length >= n;
+const bytesOf = dv => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+
+// ---------- LEGO colors ----------
+const COLORS = [
+  { n: '검정', c: '#1b1b1b' }, { n: '분홍', c: '#ff6fb5' }, { n: '보라', c: '#8a3ffc' },
+  { n: '파랑', c: '#1f5fff' }, { n: '하늘', c: '#6cc4ff' }, { n: '청록', c: '#19c7c0' },
+  { n: '초록', c: '#22b14c' }, { n: '노랑', c: '#ffd400' }, { n: '주황', c: '#ff8a00' },
+  { n: '빨강', c: '#e3242b' }, { n: '흰색', c: '#ffffff' }
+];
+const colorOut = v => (v < 0 || v > 10) ? { v: '감지 없음' } : { v: COLORS[v].n, swatch: COLORS[v].c };
+const TILT_DIR = { 0: '수평', 3: '뒤로', 5: '오른쪽', 7: '왼쪽', 9: '앞으로', 10: '알 수 없음' };
+const xyz = (x, y, z, u) => ({ v: `${x} / ${y} / ${z}`, u: 'X / Y / Z ' + u });
+
+// ---------- device catalog (LEGO device type id -> UI) ----------
+const TACHO = { kind: 'motor', tacho: true };
+const CATALOG = {
+  1:  { name: 'WeDo 2.0 M 모터 (45303)', kind: 'motor' },
+  2:  { name: '기차 모터 (88011)', kind: 'motor' },
+  8:  { name: 'LED 라이트 (88005)', kind: 'light' },
+  20: { kind: 'hidden' }, 21: { kind: 'hidden' },
+  22: { name: '부저', kind: 'buzzer' },
+  23: { name: '허브 LED', kind: 'hubled' },
+  34: { name: 'WeDo 2.0 기울기 센서 (45305)', kind: 'sensor', modes: [
+        { m: 0, l: '기울기', f: b => need(b, 2) && { v: `${i8(b, 0)}° / ${i8(b, 1)}°`, u: 'X / Y' } },
+        { m: 1, l: '방향', f: b => need(b, 1) && { v: TILT_DIR[i8(b, 0)] ?? String(i8(b, 0)) } } ] },
+  35: { name: 'WeDo 2.0 동작 센서 (45304)', kind: 'sensor', modes: [
+        { m: 0, l: '거리', f: b => need(b, 1) && { v: String(u8(b, 0) + (b[1] === 1 ? 255 : 0)), u: '0~10 단계, 가까울수록 작음' } } ] },
+  37: { name: '컬러·거리 센서 (88007)', kind: 'sensor', modes: [
+        { m: 0, l: '색상', f: b => need(b, 1) && colorOut(u8(b, 0) === 255 ? -1 : u8(b, 0)) },
+        { m: 1, l: '거리', f: b => need(b, 1) && (u8(b, 0) > 10 ? { v: '감지 없음' } : { v: String(Math.max(0, Math.floor(u8(b, 0) * 25.4) - 20)), u: 'mm (대략)' }) },
+        { m: 3, l: '반사광', f: b => need(b, 1) && { v: String(u8(b, 0)), u: '%' } },
+        { m: 4, l: '주변 밝기', f: b => need(b, 1) && { v: String(u8(b, 0)), u: '%' } } ] },
+  38: { name: 'Boost 인터랙티브 모터 (88008)', ...TACHO },
+  39: { name: 'Boost 허브 내장 모터', ...TACHO },
+  40: { name: '허브 기울기 센서', kind: 'sensor', internal: true, modes: [
+        { m: 0, l: '기울기', f: b => need(b, 2) && { v: `${-i8(b, 0)}° / ${i8(b, 1)}°`, u: 'X / Y' } } ] },
+  41: { name: 'DUPLO 기차 모터', kind: 'motor' },
+  46: { name: 'Technic L 모터 (88013)', ...TACHO },
+  47: { name: 'Technic XL 모터 (88014)', ...TACHO },
+  48: { name: 'Technic M 앵귤러 모터', ...TACHO },
+  49: { name: 'Technic L 앵귤러 모터', ...TACHO },
+  54: { kind: 'hidden' }, 55: { kind: 'hidden' }, 56: { kind: 'hidden' },
+  57: { name: '허브 가속도 센서', kind: 'sensor', internal: true, modes: [
+        { m: 0, l: '가속도', f: b => need(b, 6) && xyz(...[0, 2, 4].map(o => (i16(b, o) / 4096).toFixed(2)), 'g') } ] },
+  58: { name: '허브 자이로 센서', kind: 'sensor', internal: true, modes: [
+        { m: 0, l: '회전 속도', f: b => need(b, 6) && xyz(...[0, 2, 4].map(o => Math.round(i16(b, o) * 7 / 400)), '°/s') } ] },
+  59: { name: '허브 기울기 센서', kind: 'sensor', internal: true, modes: [
+        { m: 0, l: '기울기', f: b => need(b, 6) && xyz(i16(b, 4), i16(b, 2), -i16(b, 0), '°') } ] },
+  60: { name: '허브 온도 센서', kind: 'sensor', internal: true, modes: [
+        { m: 0, l: '온도', f: b => need(b, 2) && { v: (i16(b, 0) / 10).toFixed(1), u: '°C' } } ] },
+  61: { name: 'Technic 컬러 센서', kind: 'sensor', modes: [
+        { m: 0, l: '색상', f: b => need(b, 1) && colorOut(i8(b, 0)) },
+        { m: 1, l: '반사광', f: b => need(b, 1) && { v: String(u8(b, 0)), u: '%' } },
+        { m: 2, l: '주변 밝기', f: b => need(b, 1) && { v: String(u8(b, 0)), u: '%' } } ] },
+  62: { name: 'Technic 거리 센서', kind: 'sensor', modes: [
+        { m: 0, l: '거리', f: b => need(b, 2) && (i16(b, 0) < 0 ? { v: '감지 없음' } : { v: String(i16(b, 0)), u: 'mm' }) },
+        { m: 1, l: '빠른 거리', f: b => need(b, 2) && (i16(b, 0) < 0 ? { v: '감지 없음' } : { v: String(i16(b, 0)), u: 'mm' }) } ] },
+  63: { name: 'Technic 힘 센서', kind: 'sensor', modes: [
+        { m: 0, l: '힘', f: b => need(b, 1) && { v: (u8(b, 0) / 10).toFixed(1), u: 'N' } },
+        { m: 1, l: '눌림', f: b => need(b, 1) && { v: u8(b, 0) ? '눌림' : '안 눌림' } } ] },
+  65: { name: 'Technic S 앵귤러 모터', ...TACHO },
+  75: { name: 'Technic M 앵귤러 모터 (회색)', ...TACHO },
+  76: { name: 'Technic L 앵귤러 모터 (회색)', ...TACHO },
+};
+const describe = type => CATALOG[type] || { name: `알 수 없는 장치 (type ${type})`, kind: 'motor' };
+
+// ---------- UI helpers ----------
 const $ = id => document.getElementById(id);
-let device = null, motorCh = null;
-let portKey = 'A', speed = 0;
-let busy = false, dirty = false, lastSentPorts = [];
-
-function setMsg(t) { $('msg').textContent = t; }
-function setConnected(on) {
-  $('dot').classList.toggle('on', on);
-  $('state').textContent = on ? '연결됨' : '연결 안 됨';
-  $('connect').textContent = on ? '연결 끊기' : 'WeDo 허브 연결';
-}
-
-function render() {
-  $('speed').textContent = Math.abs(speed);
-  $('dir').textContent = speed > 0 ? '전진' : speed < 0 ? '후진' : '정지';
-  $('slider').value = speed;
-}
-
-function toByte(v) { return v < 0 ? 256 + v : v; }
-
-async function writePort(port, power) {
-  await motorCh.writeValue(new Uint8Array([port, 0x01, 0x02, toByte(power)]));
-}
-
-// Send latest speed; coalesce rapid changes so GATT writes never overlap.
-async function flush() {
-  if (!motorCh) return;
-  if (busy) { dirty = true; return; }
-  busy = true;
-  try {
-    do {
-      dirty = false;
-      const ports = PORTS[portKey];
-      const power = $('flip').checked ? -speed : speed;
-      for (const p of lastSentPorts) if (!ports.includes(p)) await writePort(p, 0);
-      for (const p of ports) await writePort(p, power);
-      lastSentPorts = ports;
-    } while (dirty);
-  } catch (e) {
-    setMsg('명령 전송 실패: ' + e.message);
-  } finally { busy = false; }
-}
-
-function setSpeed(v) {
-  speed = Math.max(-100, Math.min(100, Math.round(v / 5) * 5));
-  render(); flush();
-}
-
-async function connect() {
-  if (!window.isSecureContext) {
-    setMsg('크롬이 이 주소를 보안 주소로 인정하지 않아 블루투스가 꺼져 있습니다. chrome://flags 에서 "Insecure origins treated as secure"에 ' + location.origin + ' 을 넣고 Enabled 후 Relaunch 하세요.');
-    return;
+const el = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'text') e.textContent = v;
+    else e.setAttribute(k, v);
   }
-  if (!navigator.bluetooth) {
-    setMsg('이 브라우저는 블루투스를 지원하지 않습니다. 안드로이드 크롬으로 열어주세요.');
-    return;
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+};
+function setMsg(t, err = false) { $('msg').textContent = t; $('msg').classList.toggle('err', err); }
+const hubs = new Set();
+function refreshChrome() {
+  $('empty').hidden = hubs.size > 0;
+  $('bottom').hidden = hubs.size === 0;
+}
+
+// ---------- Base hub ----------
+class Hub {
+  constructor(device) {
+    this.device = device;
+    this.devices = new Map();     // portId -> {type, info, card, ...}
+    this.q = Promise.resolve();
+    this.pendingPower = new Map();
+    this.powerQueued = false;
+    this.connected = false;
+    device.addEventListener('gattserverdisconnected', () => this.onDisconnect());
+    this.buildUI();
   }
-  try {
-    setMsg('허브 찾는 중…');
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [SVC_HUB] }, { namePrefix: 'LPF2' }],
-      optionalServices: [SVC_HUB, SVC_IO, 'battery_service']
+  enqueue(fn) {
+    this.q = this.q.then(() => this.connected ? fn() : undefined).catch(e => console.warn('BLE write failed', e));
+    return this.q;
+  }
+  // Coalesce rapid slider moves: only the latest power per port is written.
+  setPower(port, power) {
+    this.pendingPower.set(port, power);
+    if (this.powerQueued) return;
+    this.powerQueued = true;
+    this.enqueue(async () => {
+      this.powerQueued = false;
+      const batch = [...this.pendingPower];
+      this.pendingPower.clear();
+      for (const [p, v] of batch) await this.writePower(p, v);
     });
-    device.addEventListener('gattserverdisconnected', onDisconnect);
-    setMsg('연결 중…');
-    const server = await device.gatt.connect();
-    const io = await server.getPrimaryService(SVC_IO);
-    motorCh = await io.getCharacteristic(CH_MOTOR);
-    setConnected(true);
-    setMsg((device.name || '허브') + '에 연결했습니다.');
-    lastSentPorts = [];
-    setSpeed(0);
+  }
+  portLabel(port) { return String(port); }
+  isInternal(port) { return false; }
+
+  buildUI() {
+    this.battEl = el('span', { class: 'batt', text: '배터리 –' });
+    this.stateEl = el('div', { class: 'hub-state' });
+    this.reconnectBtn = el('button', { class: 'ghost', text: '다시 연결', onclick: () => this.reconnect() });
+    this.reconnectBtn.hidden = true;
+    this.devsEl = el('div', { class: 'devs' });
+    this.section = el('section', { class: 'hub' },
+      el('div', { class: 'hub-h' },
+        el('div', {}, el('h2', { text: this.device.name || '이름 없는 허브' }), el('div', { class: 'badge', text: this.label })),
+        this.battEl),
+      this.stateEl,
+      el('div', { class: 'hub-actions' },
+        this.reconnectBtn,
+        el('button', { class: 'ghost', text: '허브 끄기', onclick: () => this.shutdown() }),
+        el('button', { class: 'ghost', text: '연결 해제', onclick: () => this.remove() })),
+      this.devsEl);
+    $('hubs').append(this.section);
+  }
+  setBattery(pct) {
+    this.battEl.textContent = `배터리 ${pct}%`;
+    this.battEl.classList.toggle('low', pct <= 20);
+  }
+  async reconnect() {
+    this.stateEl.textContent = '다시 연결하는 중…';
+    try { await this.connect(); } catch (e) { this.stateEl.textContent = '다시 연결 실패: ' + e.message; }
+  }
+  onDisconnect() {
+    this.connected = false;
+    this.section.classList.add('off');
+    this.stateEl.textContent = '연결이 끊겼습니다.';
+    this.reconnectBtn.hidden = false;
+    for (const port of [...this.devices.keys()]) this.detach(port);
+  }
+  remove() {
+    hubs.delete(this);
+    this.stopAll();
+    this.enqueue(async () => { this.device.gatt.disconnect(); });
+    setTimeout(() => { try { this.device.gatt.disconnect(); } catch (e) {} }, 400);
+    this.section.remove();
+    refreshChrome();
+  }
+  stopAll() {
+    for (const [port, d] of this.devices) if (d.info.kind === 'motor') { this.setPower(port, 0); d.ui?.reset?.(); }
+  }
+  markConnected() {
+    this.connected = true;
+    this.section.classList.remove('off');
+    this.stateEl.textContent = '';
+    this.reconnectBtn.hidden = true;
+  }
+
+  attach(port, type) {
+    if (this.devices.has(port)) {
+      if (this.devices.get(port).type === type) return;
+      this.detach(port);
+    }
+    const info = describe(type);
+    const d = { port, type, info, mode: null };
+    this.devices.set(port, d);
+    if (info.kind === 'hidden') return;
+    d.ui = makeCard(this, d);
+    // keep cards ordered by port id
+    const after = [...this.devsEl.children].find(c => +c.dataset.port > port);
+    this.devsEl.insertBefore(d.ui.root, after || null);
+  }
+  detach(port) {
+    const d = this.devices.get(port);
+    if (!d) return;
+    d.ui?.root.remove();
+    this.devices.delete(port);
+  }
+  value(port, bytes) {
+    const d = this.devices.get(port);
+    if (d && d.ui?.onValue) d.ui.onValue(bytes);
+  }
+}
+
+// ---------- LWP3 hubs: Boost Move Hub, Technic Hub, Powered Up Hub ----------
+class LwpHub extends Hub {
+  get label() {
+    const n = (this.device.name || '').toLowerCase();
+    if (n.includes('move')) return 'Boost 무브 허브';
+    if (n.includes('technic')) return 'Technic 허브';
+    return 'Powered Up 계열 허브';
+  }
+  portLabel(port) { return port < 4 ? 'ABCD'[port] : '내장'; }
+  isInternal(port) { return port >= 4; }
+  async connect() {
+    const server = await this.device.gatt.connect();
+    const svc = await server.getPrimaryService(LWP_SVC);
+    this.chr = await svc.getCharacteristic(LWP_CHR);
+    this.chr.addEventListener('characteristicvaluechanged', e => this.onData(e.target.value));
+    await this.chr.startNotifications();
+    this.markConnected();
+    this.send([0x01, 0x06, 0x02]); // battery level reports
+  }
+  send(payload) {
+    const frame = new Uint8Array([payload.length + 2, 0x00, ...payload]);
+    return this.enqueue(() => this.chr.writeValue(frame));
+  }
+  onData(dv) {
+    const all = bytesOf(dv);
+    let off = 0;
+    while (off < all.length) {
+      const len = all[off];
+      if (!len || off + len > all.length) break;
+      this.handle(all.slice(off, off + len));
+      off += len;
+    }
+  }
+  handle(m) {
+    const type = m[2];
+    if (type === 0x04) {                      // Hub Attached I/O
+      const port = m[3], ev = m[4];
+      if (ev === 0x00) this.detach(port);
+      else if (ev === 0x01) this.attach(port, u16(m, 5));
+    } else if (type === 0x45) {               // Port Value (single)
+      this.value(m[3], m.slice(4));
+    } else if (type === 0x01 && m[3] === 0x06 && m.length > 5) { // battery
+      this.setBattery(m[5]);
+    } else if (type === 0x05) {
+      console.warn('Hub reported error', [...m]);
+    }
+  }
+  subscribe(port, mode, on = true) {
+    this.send([0x41, port, mode, 0x01, 0x00, 0x00, 0x00, on ? 0x01 : 0x00]);
+  }
+  writePower(port, power) {
+    const frame = new Uint8Array([8, 0x00, 0x81, port, 0x11, 0x51, 0x00, sbyte(power)]);
+    return this.chr.writeValue(frame);
+  }
+  setLight(port, b) { this.setPower(port, b); }
+  setLed(port, color) {
+    this.subscribe(port, 0x00);
+    this.send([0x81, port, 0x11, 0x51, 0x00, color]);
+  }
+  rotateBy(port, degrees, speed) {
+    this.send([0x81, port, 0x11, 0x0B, ...le32(degrees), sbyte(speed), 100, 127, 0x03]);
+  }
+  gotoAngle(port, angle, speed) {
+    this.send([0x81, port, 0x11, 0x0D, ...le32(angle), sbyte(speed), 100, 127, 0x03]);
+  }
+  resetZero(port) { this.send([0x81, port, 0x11, 0x51, 0x02, 0, 0, 0, 0]); }
+  shutdown() { this.stopAll(); this.send([0x02, 0x01]); }
+}
+
+// ---------- WeDo 2.0 smart hub ----------
+class WedoHub extends Hub {
+  get label() { return 'WeDo 2.0 스마트허브'; }
+  portLabel(port) { return { 1: 'A', 2: 'B' }[port] || '내장'; }
+  isInternal(port) { return port > 2; }
+  async connect() {
+    const server = await this.device.gatt.connect();
+    this.ch = {};
+    for (const s of [WD_HUB, WD_IO]) {
+      const svc = await server.getPrimaryService(s);
+      for (const c of await svc.getCharacteristics()) this.ch[c.uuid] = c;
+    }
+    this.markConnected();
+    const sensor = this.ch[WD.sensor];
+    if (sensor) {
+      sensor.addEventListener('characteristicvaluechanged', e => {
+        const m = bytesOf(e.target.value);
+        this.value(m[1], m.slice(2));
+      });
+      await sensor.startNotifications();
+    }
+    const pt = this.ch[WD.portType];
+    pt.addEventListener('characteristicvaluechanged', e => {
+      const m = bytesOf(e.target.value);
+      if (m[1] === 0x01) this.attach(m[0], m[3]); else if (m[1] === 0x00) this.detach(m[0]);
+    });
+    await pt.startNotifications();
+    // Built-in LED and buzzer are always there; add them even if the hub does not announce them.
+    if (!this.devices.has(6)) this.attach(6, 23);
+    if (!this.devices.has(5)) this.attach(5, 22);
     try {
       const bs = await server.getPrimaryService('battery_service');
       const bc = await bs.getCharacteristic('battery_level');
-      const showBatt = dv => { $('batt').textContent = dv.getUint8(0) + '%'; };
-      showBatt(await bc.readValue());
-      bc.addEventListener('characteristicvaluechanged', e => showBatt(e.target.value));
+      const show = dv => this.setBattery(dv.getUint8(0));
+      show(await bc.readValue());
+      bc.addEventListener('characteristicvaluechanged', e => show(e.target.value));
       await bc.startNotifications();
-    } catch (e) { /* battery is optional */ }
+    } catch (e) { /* battery optional */ }
+  }
+  write(uuid, bytes) {
+    const c = this.ch[uuid];
+    return this.enqueue(() => c.writeValue(new Uint8Array(bytes)));
+  }
+  subscribe(port, mode, on = true) {
+    const d = this.devices.get(port);
+    if (!d) return;
+    this.write(WD.portWrite, [0x01, 0x02, port, d.type, mode, 0x01, 0x00, 0x00, 0x00, 0x00, on ? 0x01 : 0x00]);
+  }
+  writePower(port, power) {
+    return this.ch[WD.motor].writeValue(new Uint8Array([port, 0x01, 0x02, sbyte(power)]));
+  }
+  setLight(port, b) { this.setPower(port, b); }
+  setLed(port, color) {
+    this.write(WD.portWrite, [0x06, 0x17, 0x01, 0x01]);
+    this.write(WD.motor, [0x06, 0x04, 0x01, color]);
+  }
+  beep(freq, ms) {
+    this.write(WD.motor, [0x05, 0x02, 0x04, freq & 255, freq >> 8, ms & 255, ms >> 8]);
+  }
+  shutdown() { this.stopAll(); this.write(WD.disconnect, [0x00]); }
+}
+
+// ---------- Device cards ----------
+function cardHeader(hub, d) {
+  const internal = hub.isInternal(d.port);
+  return el('div', { class: 'card-h' },
+    el('span', { class: 'port' + (internal ? ' int' : ''), text: hub.portLabel(d.port) }),
+    el('span', { class: 'dname', text: d.info.name }));
+}
+
+function makeCard(hub, d) {
+  const k = d.info.kind;
+  if (k === 'motor') return motorCard(hub, d);
+  if (k === 'light') return lightCard(hub, d);
+  if (k === 'hubled') return ledCard(hub, d);
+  if (k === 'buzzer') return buzzerCard(hub, d);
+  return sensorCard(hub, d);
+}
+
+function motorCard(hub, d) {
+  let speed = 0;
+  const out = el('output', { text: '0' });
+  const dir = el('span', { text: '정지' });
+  const slider = el('input', { type: 'range', min: '-100', max: '100', step: '5', value: '0', 'aria-label': '속도' });
+  const flip = el('input', { type: 'checkbox' });
+  const send = () => hub.setPower(d.port, flip.checked ? -speed : speed);
+  const set = v => {
+    speed = Math.max(-100, Math.min(100, Math.round(v / 5) * 5));
+    out.textContent = Math.abs(speed);
+    dir.textContent = speed > 0 ? '정방향' : speed < 0 ? '역방향' : '정지';
+    slider.value = speed;
+    send();
+  };
+  const stop = () => { set(0); hub.setPower(d.port, 127); };
+  slider.addEventListener('input', () => set(+slider.value));
+  flip.addEventListener('change', send);
+  const root = el('div', { class: 'card', 'data-port': d.port },
+    cardHeader(hub, d),
+    el('div', { class: 'readout' }, out, dir),
+    slider,
+    el('div', { class: 'drive' },
+      el('button', { class: 'b', text: '◀ 10', onclick: () => set(speed - 10) }),
+      el('button', { class: 's', text: '정지', onclick: stop }),
+      el('button', { class: 'f', text: '10 ▶', onclick: () => set(speed + 10) })),
+    el('div', { class: 'opts' }, el('label', {}, flip, '방향 반대로')));
+  const ui = { root, reset: () => { speed = 0; out.textContent = '0'; dir.textContent = '정지'; slider.value = 0; } };
+
+  if (d.info.tacho && hub instanceof LwpHub) {
+    const pos = el('b', { text: '–' });
+    const sign = () => flip.checked ? -1 : 1;
+    root.append(el('div', { class: 'tacho' },
+      el('div', { class: 'pos' }, '회전 각도 ', pos),
+      el('div', { class: 'btnrow' },
+        el('button', { text: '−90°', onclick: () => hub.rotateBy(d.port, 90, -50 * sign()) }),
+        el('button', { text: '+90°', onclick: () => hub.rotateBy(d.port, 90, 50 * sign()) }),
+        el('button', { text: '+360°', onclick: () => hub.rotateBy(d.port, 360, 50 * sign()) }),
+        el('button', { text: '0°로 돌아가기', onclick: () => hub.gotoAngle(d.port, 0, 50) }),
+        el('button', { text: '여기를 0°로', onclick: () => { hub.resetZero(d.port); pos.textContent = '0°'; } }))));
+    hub.subscribe(d.port, 0x02);
+    ui.onValue = b => { if (need(b, 4)) pos.textContent = i32(b, 0) + '°'; };
+  }
+  return ui;
+}
+
+function lightCard(hub, d) {
+  const out = el('output', { text: '0' });
+  const slider = el('input', { type: 'range', min: '0', max: '100', step: '10', value: '0', 'aria-label': '밝기' });
+  slider.addEventListener('input', () => { out.textContent = slider.value; hub.setLight(d.port, +slider.value); });
+  const root = el('div', { class: 'card', 'data-port': d.port },
+    cardHeader(hub, d), el('div', { class: 'readout' }, out, el('span', { text: '% 밝기' })), slider);
+  return { root };
+}
+
+function ledCard(hub, d) {
+  const btns = COLORS.map((c, i) => el('button', {
+    style: `background:${c.c}`, 'aria-label': i === 0 ? '끄기' : c.n, 'aria-pressed': 'false', title: i === 0 ? '끄기' : c.n,
+    onclick: e => {
+      btns.forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget ? 'true' : 'false'));
+      hub.setLed(d.port, i);
+    } }));
+  const root = el('div', { class: 'card', 'data-port': d.port }, cardHeader(hub, d), el('div', { class: 'colors' }, ...btns));
+  return { root };
+}
+
+function buzzerCard(hub, d) {
+  const root = el('div', { class: 'card', 'data-port': d.port }, cardHeader(hub, d),
+    el('div', { class: 'btnrow' },
+      el('button', { text: '경적 (빵)', onclick: () => hub.beep(440, 400) }),
+      el('button', { text: '짧게 (삑)', onclick: () => hub.beep(880, 120) }),
+      el('button', { text: '길게', onclick: () => hub.beep(330, 1200) })));
+  return { root };
+}
+
+function sensorCard(hub, d) {
+  const modes = d.info.modes || [];
+  let cur = modes[0];
+  const v = el('span', { class: 'v', text: '–' });
+  const u = el('span', { class: 'u' });
+  const sw = el('span', { class: 'swatch' }); sw.hidden = true;
+  const modeBtns = modes.map(m => el('button', {
+    text: m.l, 'aria-pressed': m === cur ? 'true' : 'false',
+    onclick: e => {
+      cur = m;
+      modeBtns.forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget ? 'true' : 'false'));
+      v.textContent = '–'; u.textContent = ''; sw.hidden = true;
+      hub.subscribe(d.port, m.m);
+    } }));
+  const body = [modes.length > 1 ? el('div', { class: 'modes' }, ...modeBtns) : null,
+                el('div', { class: 'value' }, sw, el('div', {}, v, ' ', u))];
+  let root;
+  if (d.info.internal) {
+    // Hub-internal sensors stream a lot; only listen while the card is open.
+    root = el('details', { class: 'card', 'data-port': d.port }, el('summary', {}, cardHeader(hub, d)), ...body);
+    root.addEventListener('toggle', () => hub.subscribe(d.port, cur.m, root.open));
+  } else {
+    root = el('div', { class: 'card', 'data-port': d.port }, cardHeader(hub, d), ...body);
+    if (cur) hub.subscribe(d.port, cur.m);
+  }
+  let frame = 0, latest = null;
+  const onValue = b => {
+    latest = b;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      let r = null;
+      try { r = cur && cur.f(latest); } catch (e) { r = null; }
+      if (!r) return;
+      v.textContent = r.v; u.textContent = r.u || '';
+      sw.hidden = !r.swatch; if (r.swatch) sw.style.background = r.swatch;
+    });
+  };
+  return { root, onValue };
+}
+
+// ---------- connect flow ----------
+async function addHub() {
+  if (!window.isSecureContext) {
+    setMsg('보안 주소(https)가 아니라서 블루투스를 쓸 수 없습니다. https 주소로 열어주세요.', true);
+    return;
+  }
+  if (!navigator.bluetooth) {
+    setMsg('이 브라우저는 블루투스를 지원하지 않습니다. 안드로이드 크롬으로 열어주세요.', true);
+    return;
+  }
+  let device;
+  try {
+    setMsg('허브를 찾는 중…');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [LWP_SVC] }, { services: [WD_HUB] }],
+      optionalServices: [LWP_SVC, WD_HUB, WD_IO, 'battery_service']
+    });
   } catch (e) {
-    motorCh = null; setConnected(false);
-    setMsg(e.name === 'NotFoundError' ? '선택을 취소했습니다.' : '연결 실패: ' + e.message);
+    setMsg(e.name === 'NotFoundError' ? '선택을 취소했습니다.' : '검색 실패: ' + e.message, e.name !== 'NotFoundError');
+    return;
+  }
+  for (const h of hubs) if (h.device.id === device.id) { setMsg('이미 연결된 허브입니다.'); return; }
+  setMsg('연결 중…');
+  let hub;
+  try {
+    const server = await device.gatt.connect();
+    let isLwp = true;
+    try { await server.getPrimaryService(LWP_SVC); } catch (e) { isLwp = false; }
+    hub = isLwp ? new LwpHub(device) : new WedoHub(device);
+    hubs.add(hub);
+    refreshChrome();
+    await hub.connect();
+    setMsg(`${device.name || '허브'} 연결됨. 다른 허브도 추가할 수 있습니다.`);
+  } catch (e) {
+    if (hub) { hubs.delete(hub); hub.section.remove(); refreshChrome(); }
+    try { device.gatt.disconnect(); } catch (_) {}
+    setMsg('연결 실패: ' + e.message, true);
   }
 }
 
-function onDisconnect() {
-  motorCh = null; speed = 0; render(); setConnected(false);
-  $('batt').textContent = '-';
-  setMsg('허브 연결이 끊겼습니다.');
-}
-
-$('connect').addEventListener('click', async () => {
-  if (device && device.gatt.connected) {
-    speed = 0; await flush();
-    device.gatt.disconnect();
-  } else connect();
-});
-$('slider').addEventListener('input', e => setSpeed(+e.target.value));
-$('fwd').addEventListener('click', () => setSpeed(speed + 10));
-$('back').addEventListener('click', () => setSpeed(speed - 10));
-$('stop').addEventListener('click', () => setSpeed(0));
-$('flip').addEventListener('change', () => flush());
-document.querySelectorAll('.ports button').forEach(b => b.addEventListener('click', () => {
-  portKey = b.dataset.port;
-  document.querySelectorAll('.ports button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
-  flush();
-}));
-render();
+$('addHub').addEventListener('click', addHub);
+$('stopAll').addEventListener('click', () => { for (const h of hubs) h.stopAll(); setMsg('모든 모터를 정지했습니다.'); });
+refreshChrome();
 </script>
 </body>
 </html>
